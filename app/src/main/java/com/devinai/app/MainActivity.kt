@@ -1,0 +1,590 @@
+package com.devinai.app
+
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.os.Message
+import android.view.View
+import android.view.WindowManager
+import android.webkit.CookieManager
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.devinai.app.databinding.ActivityMainBinding
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var webView: WebView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
+
+    private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var childWebView: WebView? = null
+
+    private var isPageLoaded = false
+    private var pendingPermissionCallback: ((Boolean) -> Unit)? = null
+
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+    private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
+
+    private lateinit var networkCallback: ConnectivityManager.NetworkCallback
+    private var isNetworkCallbackRegistered = false
+
+    companion object {
+        private const val DEVIN_URL = "https://app.devin.ai/"
+        private const val WEB_VIEW_STATE_KEY = "webview_state"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
+        super.onCreate(savedInstanceState)
+
+        splashScreen.setKeepOnScreenCondition { !isPageLoaded }
+
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        )
+
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        registerActivityResults()
+        setupWebView()
+        setupSwipeRefresh()
+        setupBackNavigation()
+        setupRetryButton()
+        setupNetworkMonitor()
+
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onResume(owner: LifecycleOwner) {
+                webView.onResume()
+            }
+
+            override fun onPause(owner: LifecycleOwner) {
+                webView.onPause()
+            }
+        })
+
+        if (savedInstanceState != null) {
+            webView.restoreState(savedInstanceState)
+        } else {
+            if (isNetworkAvailable()) {
+                webView.loadUrl(DEVIN_URL)
+            } else {
+                showNoInternetView()
+            }
+        }
+    }
+
+    private fun registerActivityResults() {
+        fileChooserLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val data = result.data
+            val results = if (result.resultCode == RESULT_OK && data != null) {
+                val clipData = data.clipData
+                if (clipData != null) {
+                    Array(clipData.itemCount) { clipData.getItemAt(it).uri }
+                } else {
+                    data.data?.let { arrayOf(it) }
+                }
+            } else {
+                null
+            }
+            fileUploadCallback?.onReceiveValue(results ?: emptyArray())
+            fileUploadCallback = null
+        }
+
+        permissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+            val allGranted = permissions.values.all { it }
+            pendingPermissionCallback?.invoke(allGranted)
+            pendingPermissionCallback = null
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun setupWebView() {
+        webView = binding.webView
+
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            cacheMode = WebSettings.LOAD_DEFAULT
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            builtInZoomControls = true
+            displayZoomControls = false
+            allowFileAccess = false
+            allowContentAccess = false
+            mediaPlaybackRequiresUserGesture = false
+            userAgentString = webView.settings.userAgentString.replace("; wv", "")
+
+            @Suppress("DEPRECATION")
+            allowFileAccessFromFileURLs = false
+            @Suppress("DEPRECATION")
+            allowUniversalAccessFromFileURLs = false
+        }
+
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(webView, true)
+        }
+
+        webView.webViewClient = DevinWebViewClient()
+        webView.webChromeClient = DevinWebChromeClient()
+
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            handleDownload(url, userAgent, contentDisposition, mimeType)
+        }
+
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+    }
+
+    private fun setupSwipeRefresh() {
+        swipeRefresh = binding.swipeRefresh
+        swipeRefresh.setColorSchemeResources(
+            com.google.android.material.R.color.design_default_color_primary
+        )
+        swipeRefresh.setOnRefreshListener {
+            if (isNetworkAvailable()) {
+                webView.reload()
+            } else {
+                swipeRefresh.isRefreshing = false
+                showNoInternetView()
+            }
+        }
+    }
+
+    private fun setupBackNavigation() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                when {
+                    customView != null -> hideCustomView()
+                    childWebView != null -> destroyChildWebView()
+                    webView.canGoBack() -> webView.goBack()
+                    else -> finish()
+                }
+            }
+        })
+    }
+
+    private fun setupRetryButton() {
+        binding.btnRetry.setOnClickListener {
+            if (isNetworkAvailable()) {
+                hideNoInternetView()
+                webView.reload()
+            } else {
+                Toast.makeText(this, R.string.still_offline, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun setupNetworkMonitor() {
+        val connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                runOnUiThread {
+                    if (binding.noInternetView.visibility == View.VISIBLE) {
+                        hideNoInternetView()
+                        webView.reload()
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                runOnUiThread {
+                    if (!isNetworkAvailable()) {
+                        showNoInternetView()
+                    }
+                }
+            }
+        }
+
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        connectivityManager.registerNetworkCallback(request, networkCallback)
+        isNetworkCallbackRegistered = true
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    }
+
+    private fun showNoInternetView() {
+        binding.noInternetView.visibility = View.VISIBLE
+        binding.webViewContainer.visibility = View.GONE
+        binding.progressBar.visibility = View.GONE
+    }
+
+    private fun hideNoInternetView() {
+        binding.noInternetView.visibility = View.GONE
+        binding.webViewContainer.visibility = View.VISIBLE
+    }
+
+    private fun isAllowedUrl(url: String): Boolean {
+        val uri = Uri.parse(url)
+        val host = uri.host?.lowercase() ?: return false
+        return host == "app.devin.ai" || host == "devin.ai" || host.endsWith(".devin.ai")
+    }
+
+    private fun openExternalBrowser(url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.cannot_open_link, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun handleDownload(
+        url: String,
+        userAgent: String,
+        contentDisposition: String,
+        mimeType: String
+    ) {
+        try {
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setMimeType(mimeType)
+                addRequestHeader("User-Agent", userAgent)
+                addRequestHeader("Cookie", CookieManager.getInstance().getCookie(url))
+                setDescription(getString(R.string.downloading))
+                setTitle(URLUtil.guessFileName(url, contentDisposition, mimeType))
+                setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                )
+                setDestinationInExternalPublicDir(
+                    Environment.DIRECTORY_DOWNLOADS,
+                    URLUtil.guessFileName(url, contentDisposition, mimeType)
+                )
+            }
+
+            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as DownloadManager
+            downloadManager.enqueue(request)
+            Toast.makeText(this, R.string.download_started, Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.download_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun requestPermissions(
+        permissions: Array<String>,
+        callback: (Boolean) -> Unit
+    ) {
+        val needed = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (needed.isEmpty()) {
+            callback(true)
+            return
+        }
+        pendingPermissionCallback = callback
+        permissionLauncher.launch(needed.toTypedArray())
+    }
+
+    private fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
+        if (customView != null) {
+            callback.onCustomViewHidden()
+            return
+        }
+        customView = view
+        customViewCallback = callback
+        binding.fullscreenContainer.addView(view)
+        binding.fullscreenContainer.visibility = View.VISIBLE
+        binding.webViewContainer.visibility = View.GONE
+        binding.swipeRefresh.isEnabled = false
+
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun hideCustomView() {
+        customView ?: return
+        binding.fullscreenContainer.removeAllViews()
+        binding.fullscreenContainer.visibility = View.GONE
+        binding.webViewContainer.visibility = View.VISIBLE
+        binding.swipeRefresh.isEnabled = true
+        customViewCallback?.onCustomViewHidden()
+        customView = null
+        customViewCallback = null
+
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun destroyChildWebView() {
+        childWebView?.let { child ->
+            binding.webViewContainer.removeView(child)
+            child.destroy()
+        }
+        childWebView = null
+        webView.visibility = View.VISIBLE
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView.saveState(outState)
+    }
+
+    override fun onDestroy() {
+        if (isNetworkCallbackRegistered) {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.unregisterNetworkCallback(networkCallback)
+            isNetworkCallbackRegistered = false
+        }
+        destroyChildWebView()
+        webView.destroy()
+        super.onDestroy()
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        webView.freeMemory()
+    }
+
+    // ── Custom WebViewClient ──────────────────────────────────────────────
+
+    private inner class DevinWebViewClient : WebViewClient() {
+
+        override fun shouldOverrideUrlLoading(
+            view: WebView,
+            request: WebResourceRequest
+        ): Boolean {
+            val url = request.url.toString()
+
+            // Allow authentication-related URLs to load in WebView
+            if (isAuthUrl(url)) return false
+
+            return if (isAllowedUrl(url)) {
+                false
+            } else {
+                openExternalBrowser(url)
+                true
+            }
+        }
+
+        override fun onPageFinished(view: WebView, url: String?) {
+            super.onPageFinished(view, url)
+            isPageLoaded = true
+            swipeRefresh.isRefreshing = false
+            binding.progressBar.visibility = View.GONE
+            CookieManager.getInstance().flush()
+        }
+
+        override fun onReceivedError(
+            view: WebView,
+            request: WebResourceRequest,
+            error: WebResourceError
+        ) {
+            if (request.isForMainFrame && !isNetworkAvailable()) {
+                showNoInternetView()
+            }
+        }
+
+        override fun onReceivedSslError(
+            view: WebView,
+            handler: android.webkit.SslErrorHandler,
+            error: android.net.http.SslError
+        ) {
+            handler.cancel()
+        }
+
+        private fun isAuthUrl(url: String): Boolean {
+            val host = Uri.parse(url).host?.lowercase() ?: return false
+            return host.contains("accounts.google.com") ||
+                    host.contains("login.microsoftonline.com") ||
+                    host.contains("github.com") ||
+                    host.contains("auth0.com") ||
+                    host.contains("cognition") ||
+                    host.endsWith(".devin.ai") ||
+                    host == "devin.ai"
+        }
+    }
+
+    // ── Custom WebChromeClient ────────────────────────────────────────────
+
+    private inner class DevinWebChromeClient : WebChromeClient() {
+
+        override fun onProgressChanged(view: WebView, newProgress: Int) {
+            if (newProgress < 100) {
+                binding.progressBar.visibility = View.VISIBLE
+                binding.progressBar.progress = newProgress
+            } else {
+                binding.progressBar.visibility = View.GONE
+            }
+        }
+
+        override fun onShowFileChooser(
+            webView: WebView,
+            filePathCallback: ValueCallback<Array<Uri>>,
+            fileChooserParams: FileChooserParams
+        ): Boolean {
+            fileUploadCallback?.onReceiveValue(null)
+            fileUploadCallback = filePathCallback
+
+            try {
+                val intent = fileChooserParams.createIntent()
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                fileChooserLauncher.launch(intent)
+            } catch (e: Exception) {
+                fileUploadCallback?.onReceiveValue(emptyArray())
+                fileUploadCallback = null
+                return false
+            }
+            return true
+        }
+
+        override fun onPermissionRequest(request: android.webkit.PermissionRequest) {
+            val androidPermissions = mutableListOf<String>()
+            request.resources.forEach { resource ->
+                when (resource) {
+                    android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE ->
+                        androidPermissions.add(Manifest.permission.CAMERA)
+                    android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE ->
+                        androidPermissions.add(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+
+            if (androidPermissions.isEmpty()) {
+                request.grant(request.resources)
+                return
+            }
+
+            requestPermissions(androidPermissions.toTypedArray()) { granted ->
+                if (granted) {
+                    request.grant(request.resources)
+                } else {
+                    request.deny()
+                }
+            }
+        }
+
+        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+            showCustomView(view, callback)
+        }
+
+        override fun onHideCustomView() {
+            hideCustomView()
+        }
+
+        override fun onCreateWindow(
+            view: WebView,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: Message
+        ): Boolean {
+            val newWebView = WebView(this@MainActivity).apply {
+                @SuppressLint("SetJavaScriptEnabled")
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.setSupportMultipleWindows(true)
+                settings.javaScriptCanOpenWindowsAutomatically = true
+                settings.userAgentString = webView.settings.userAgentString
+
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView,
+                        request: WebResourceRequest
+                    ): Boolean {
+                        val url = request.url.toString()
+                        if (isAllowedUrl(url)) {
+                            destroyChildWebView()
+                            this@MainActivity.webView.loadUrl(url)
+                            return true
+                        }
+                        if (isAuthUrl(url)) return false
+                        openExternalBrowser(url)
+                        destroyChildWebView()
+                        return true
+                    }
+
+                    private fun isAuthUrl(url: String): Boolean {
+                        val host = Uri.parse(url).host?.lowercase() ?: return false
+                        return host.contains("accounts.google.com") ||
+                                host.contains("login.microsoftonline.com") ||
+                                host.contains("github.com") ||
+                                host.contains("auth0.com") ||
+                                host.contains("cognition") ||
+                                host.endsWith(".devin.ai") ||
+                                host == "devin.ai"
+                    }
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        CookieManager.getInstance().flush()
+                    }
+                }
+
+                webChromeClient = object : WebChromeClient() {
+                    override fun onCloseWindow(window: WebView) {
+                        destroyChildWebView()
+                    }
+                }
+            }
+
+            childWebView = newWebView
+            webView.visibility = View.GONE
+            binding.webViewContainer.addView(
+                newWebView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+
+            val transport = resultMsg.obj as WebView.WebViewTransport
+            transport.webView = newWebView
+            resultMsg.sendToTarget()
+            return true
+        }
+
+        override fun onCloseWindow(window: WebView) {
+            destroyChildWebView()
+        }
+    }
+}
