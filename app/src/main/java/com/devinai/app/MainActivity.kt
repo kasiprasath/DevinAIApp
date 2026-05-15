@@ -35,14 +35,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.devinai.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var webView: WebView
-    private lateinit var swipeRefresh: SwipeRefreshLayout
 
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var customView: View? = null
@@ -79,7 +77,6 @@ class MainActivity : AppCompatActivity() {
 
         registerActivityResults()
         setupWebView()
-        setupSwipeRefresh()
         setupBackNavigation()
         setupRetryButton()
         setupNetworkMonitor()
@@ -173,21 +170,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-    }
-
-    private fun setupSwipeRefresh() {
-        swipeRefresh = binding.swipeRefresh
-        swipeRefresh.setColorSchemeResources(
-            com.google.android.material.R.color.design_default_color_primary
-        )
-        swipeRefresh.setOnRefreshListener {
-            if (isNetworkAvailable()) {
-                loadOrReload()
-            } else {
-                swipeRefresh.isRefreshing = false
-                showNoInternetView()
-            }
-        }
     }
 
     private fun setupBackNavigation() {
@@ -343,7 +325,6 @@ class MainActivity : AppCompatActivity() {
         binding.fullscreenContainer.addView(view)
         binding.fullscreenContainer.visibility = View.VISIBLE
         binding.webViewContainer.visibility = View.GONE
-        binding.swipeRefresh.isEnabled = false
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -353,7 +334,6 @@ class MainActivity : AppCompatActivity() {
         binding.fullscreenContainer.removeAllViews()
         binding.fullscreenContainer.visibility = View.GONE
         binding.webViewContainer.visibility = View.VISIBLE
-        binding.swipeRefresh.isEnabled = true
         customViewCallback?.onCustomViewHidden()
         customView = null
         customViewCallback = null
@@ -415,7 +395,6 @@ class MainActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
             isPageLoaded = true
-            swipeRefresh.isRefreshing = false
             binding.progressBar.visibility = View.GONE
             CookieManager.getInstance().flush()
         }
