@@ -19,6 +19,5 @@ class DevinApplication : Application() {
     private fun initCookies() {
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
-        cookieManager.setAcceptThirdPartyCookies(null, true)
     }
 }

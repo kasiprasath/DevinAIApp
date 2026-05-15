@@ -3,17 +3,14 @@ package com.devinai.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
@@ -185,7 +182,7 @@ class MainActivity : AppCompatActivity() {
         )
         swipeRefresh.setOnRefreshListener {
             if (isNetworkAvailable()) {
-                webView.reload()
+                loadOrReload()
             } else {
                 swipeRefresh.isRefreshing = false
                 showNoInternetView()
@@ -206,11 +203,19 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun loadOrReload() {
+        if (webView.url.isNullOrBlank()) {
+            webView.loadUrl(DEVIN_URL)
+        } else {
+            webView.reload()
+        }
+    }
+
     private fun setupRetryButton() {
         binding.btnRetry.setOnClickListener {
             if (isNetworkAvailable()) {
                 hideNoInternetView()
-                webView.reload()
+                loadOrReload()
             } else {
                 Toast.makeText(this, R.string.still_offline, Toast.LENGTH_SHORT).show()
             }
@@ -226,7 +231,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (binding.noInternetView.visibility == View.VISIBLE) {
                         hideNoInternetView()
-                        webView.reload()
+                        loadOrReload()
                     }
                 }
             }
