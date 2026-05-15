@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Devin AI</string>
+    <string name="no_internet">No Internet Connection</string>
+    <string name="check_connection">Please check your connection and try again.</string>
+    <string name="retry">Retry</string>
+    <string name="still_offline">Still offline. Please check your connection.</string>
+    <string name="cannot_open_link">Cannot open this link</string>
+    <string name="downloading">Downloading file…</string>
+    <string name="download_started">Download started</string>
+    <string name="download_failed">Download failed</string>
+</resources>

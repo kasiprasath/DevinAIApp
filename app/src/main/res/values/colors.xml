@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Devin AI Brand Colors -->
+    <color name="devin_primary">#6C5CE7</color>
+    <color name="devin_primary_dark">#5A4BD1</color>
+    <color name="devin_accent">#A29BFE</color>
+    <color name="devin_background_light">#FFFFFF</color>
+    <color name="devin_background_dark">#121212</color>
+    <color name="devin_surface_light">#FAFAFA</color>
+    <color name="devin_surface_dark">#1E1E1E</color>
+    <color name="splash_background_light">#FFFFFF</color>
+    <color name="splash_background_dark">#121212</color>
+    <color name="no_internet_icon_tint">#757575</color>
+
+    <!-- Material 3 Seed Colors -->
+    <color name="md_theme_light_primary">#6C5CE7</color>
+    <color name="md_theme_light_onPrimary">#FFFFFF</color>
+    <color name="md_theme_light_primaryContainer">#E8E0FF</color>
+    <color name="md_theme_light_onPrimaryContainer">#1F0061</color>
+    <color name="md_theme_light_background">#FFFBFF</color>
+    <color name="md_theme_light_surface">#FFFBFF</color>
+    <color name="md_theme_light_onSurface">#1C1B1F</color>
+
+    <color name="md_theme_dark_primary">#CFBCFF</color>
+    <color name="md_theme_dark_onPrimary">#381E72</color>
+    <color name="md_theme_dark_primaryContainer">#4F378B</color>
+    <color name="md_theme_dark_onPrimaryContainer">#E8DEFF</color>
+    <color name="md_theme_dark_background">#1C1B1F</color>
+    <color name="md_theme_dark_surface">#1C1B1F</color>
+    <color name="md_theme_dark_onSurface">#E6E1E5</color>
+</resources>
