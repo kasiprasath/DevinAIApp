@@ -380,12 +380,11 @@ class MainActivity : AppCompatActivity() {
         ): Boolean {
             val url = request.url.toString()
 
-            return if (isAllowedUrl(url)) {
-                false
-            } else {
-                openExternalBrowser(url)
-                true
-            }
+            if (isAllowedUrl(url)) return false
+            if (isAuthUrl(url)) return false
+
+            openExternalBrowser(url)
+            return true
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
@@ -412,6 +411,13 @@ class MainActivity : AppCompatActivity() {
             handler.cancel()
         }
 
+        private fun isAuthUrl(url: String): Boolean {
+            val host = Uri.parse(url).host?.lowercase() ?: return false
+            return host.contains("accounts.google.com") ||
+                    host.contains("login.microsoftonline.com") ||
+                    host.contains("auth0.com") ||
+                    host.contains("cognition")
+        }
     }
 
     // ── Custom WebChromeClient ────────────────────────────────────────────
@@ -498,9 +504,18 @@ class MainActivity : AppCompatActivity() {
                             this@MainActivity.webView.loadUrl(url)
                             return true
                         }
+                        if (isAuthUrl(url)) return false
                         openExternalBrowser(url)
                         destroyChildWebView()
                         return true
+                    }
+
+                    private fun isAuthUrl(url: String): Boolean {
+                        val host = Uri.parse(url).host?.lowercase() ?: return false
+                        return host.contains("accounts.google.com") ||
+                                host.contains("login.microsoftonline.com") ||
+                                host.contains("auth0.com") ||
+                                host.contains("cognition")
                     }
 
                     override fun onPageFinished(view: WebView, url: String?) {
