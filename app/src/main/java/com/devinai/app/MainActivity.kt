@@ -90,9 +90,11 @@ class MainActivity : AppCompatActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(binding.webViewContainer) { view, windowInsets ->
+            val imeInsets = windowInsets.getInsets(WindowInsetsCompat.Type.ime())
             val navBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars())
             val statusBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.statusBars())
-            view.setPadding(0, statusBarInsets.top, 0, navBarInsets.bottom)
+            val bottomInset = maxOf(imeInsets.bottom, navBarInsets.bottom)
+            view.setPadding(0, statusBarInsets.top, 0, bottomInset)
             windowInsets
         }
 
