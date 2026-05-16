@@ -28,6 +28,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -172,6 +173,66 @@ class MainActivity : AppCompatActivity() {
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
     }
 
+    private fun injectInputFixes() {
+        val js = """
+            (function() {
+                function fixInput(el) {
+                    el.setAttribute('spellcheck', 'false');
+                    el.setAttribute('autocorrect', 'off');
+                    el.setAttribute('autocomplete', 'off');
+                    el.setAttribute('autocapitalize', 'off');
+                }
+                document.addEventListener('focusin', function(e) {
+                    var el = e.target;
+                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable || el.contentEditable === 'true') {
+                        fixInput(el);
+                    }
+                }, true);
+                var observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(m) {
+                        m.addedNodes.forEach(function(node) {
+                            if (node.nodeType === 1) {
+                                if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.isContentEditable) {
+                                    fixInput(node);
+                                }
+                                node.querySelectorAll && node.querySelectorAll('input, textarea, [contenteditable=true]').forEach(fixInput);
+                            }
+                        });
+                    });
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+                document.querySelectorAll('input, textarea, [contenteditable=true]').forEach(fixInput);
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
+    private fun injectSwipeToCloseSidebar() {
+        val js = """
+            (function() {
+                var startX = 0, startY = 0;
+                document.addEventListener('touchstart', function(e) {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                }, { passive: true });
+                document.addEventListener('touchend', function(e) {
+                    var endX = e.changedTouches[0].clientX;
+                    var endY = e.changedTouches[0].clientY;
+                    var dx = endX - startX;
+                    var dy = Math.abs(endY - startY);
+                    if (dx < -80 && dy < 100) {
+                        var sidebar = document.querySelector('nav') || document.querySelector('[class*="sidebar"]') || document.querySelector('[class*="Sidebar"]') || document.querySelector('[class*="drawer"]');
+                        if (sidebar) {
+                            var closeBtn = sidebar.querySelector('button[aria-label*="close"]') || sidebar.querySelector('button[aria-label*="Close"]') || sidebar.querySelector('[class*="close"]');
+                            if (closeBtn) closeBtn.click();
+                        }
+                    }
+                }, { passive: true });
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
     private fun setupBackNavigation() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -179,10 +240,18 @@ class MainActivity : AppCompatActivity() {
                     customView != null -> hideCustomView()
                     childWebView != null -> destroyChildWebView()
                     webView.canGoBack() -> webView.goBack()
-                    else -> finish()
+                    else -> showExitConfirmation()
                 }
             }
         })
+    }
+
+    private fun showExitConfirmation() {
+        MaterialAlertDialogBuilder(this)
+            .setMessage(getString(R.string.exit_confirmation))
+            .setNegativeButton(getString(R.string.no)) { dialog, _ -> dialog.dismiss() }
+            .setPositiveButton(getString(R.string.yes)) { _, _ -> finish() }
+            .show()
     }
 
     private fun loadOrReload() {
@@ -391,6 +460,8 @@ class MainActivity : AppCompatActivity() {
             super.onPageFinished(view, url)
             isPageLoaded = true
             CookieManager.getInstance().flush()
+            injectInputFixes()
+            injectSwipeToCloseSidebar()
         }
 
         override fun onReceivedError(
