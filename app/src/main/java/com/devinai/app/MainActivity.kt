@@ -28,6 +28,13 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import android.graphics.Color
+import android.graphics.Typeface
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -210,21 +217,46 @@ class MainActivity : AppCompatActivity() {
     private fun injectSwipeToCloseSidebar() {
         val js = """
             (function() {
-                var startX = 0, startY = 0;
+                if (window.__devinSwipeInstalled) return;
+                window.__devinSwipeInstalled = true;
+                var startX = 0, startY = 0, startTime = 0;
                 document.addEventListener('touchstart', function(e) {
                     startX = e.touches[0].clientX;
                     startY = e.touches[0].clientY;
+                    startTime = Date.now();
                 }, { passive: true });
                 document.addEventListener('touchend', function(e) {
                     var endX = e.changedTouches[0].clientX;
                     var endY = e.changedTouches[0].clientY;
                     var dx = endX - startX;
                     var dy = Math.abs(endY - startY);
-                    if (dx < -80 && dy < 100) {
-                        var sidebar = document.querySelector('nav') || document.querySelector('[class*="sidebar"]') || document.querySelector('[class*="Sidebar"]') || document.querySelector('[class*="drawer"]');
-                        if (sidebar) {
-                            var closeBtn = sidebar.querySelector('button[aria-label*="close"]') || sidebar.querySelector('button[aria-label*="Close"]') || sidebar.querySelector('[class*="close"]');
-                            if (closeBtn) closeBtn.click();
+                    var elapsed = Date.now() - startTime;
+                    if (dx < -60 && dy < 120 && elapsed < 500) {
+                        var closed = false;
+                        // Strategy 1: Find sidebar/aside and look for toggle/close buttons
+                        var selectors = ['aside', '[role="navigation"]', 'nav[class*="sidebar"]', 'nav[class*="Sidebar"]',
+                            '[class*="sidebar"]', '[class*="Sidebar"]', '[class*="side-panel"]', '[class*="SidePanel"]',
+                            '[class*="drawer"]', '[class*="Drawer"]', '[class*="side_panel"]', '[class*="sidenav"]'];
+                        for (var i = 0; i < selectors.length && !closed; i++) {
+                            var el = document.querySelector(selectors[i]);
+                            if (el && el.offsetWidth > 50) {
+                                var btns = el.querySelectorAll('button');
+                                for (var j = 0; j < btns.length; j++) {
+                                    var b = btns[j];
+                                    var label = (b.getAttribute('aria-label') || '') + (b.textContent || '') + (b.className || '');
+                                    if (/close|collapse|toggle|hide|menu/i.test(label)) {
+                                        b.click(); closed = true; break;
+                                    }
+                                }
+                                if (!closed) {
+                                    var firstBtn = el.querySelector('button');
+                                    if (firstBtn) { firstBtn.click(); closed = true; }
+                                }
+                            }
+                        }
+                        // Strategy 2: Dispatch Escape key
+                        if (!closed) {
+                            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
                         }
                     }
                 }, { passive: true });
@@ -247,11 +279,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showExitConfirmation() {
-        MaterialAlertDialogBuilder(this)
+        val dialog = MaterialAlertDialogBuilder(this, R.style.ExitDialogTheme)
+            .setTitle(getString(R.string.exit_title))
             .setMessage(getString(R.string.exit_confirmation))
-            .setNegativeButton(getString(R.string.no)) { dialog, _ -> dialog.dismiss() }
+            .setNegativeButton(getString(R.string.no)) { d, _ -> d.dismiss() }
             .setPositiveButton(getString(R.string.yes)) { _, _ -> finish() }
             .show()
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.decorView?.setBackgroundResource(R.drawable.dialog_background)
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.let { btn ->
+            btn.setTextColor(Color.WHITE)
+            btn.setTypeface(null, Typeface.BOLD)
+        }
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.let { btn ->
+            btn.setTextColor(Color.WHITE)
+            btn.setTypeface(null, Typeface.BOLD)
+        }
     }
 
     private fun loadOrReload() {

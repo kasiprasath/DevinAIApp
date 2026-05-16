@@ -9,7 +9,8 @@
     <string name="downloading">Downloading file…</string>
     <string name="download_started">Download started</string>
     <string name="download_failed">Download failed</string>
-    <string name="exit_confirmation">Are you sure you want to exit?</string>
+    <string name="exit_title">Exit App</string>
+    <string name="exit_confirmation">Are you sure you want to exit Devin AI?</string>
     <string name="yes">Yes</string>
     <string name="no">No</string>
 </resources>
