@@ -3,17 +3,14 @@ package com.devinai.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
@@ -38,14 +35,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.devinai.app.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var webView: WebView
-    private lateinit var swipeRefresh: SwipeRefreshLayout
 
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     private var customView: View? = null
@@ -82,7 +77,6 @@ class MainActivity : AppCompatActivity() {
 
         registerActivityResults()
         setupWebView()
-        setupSwipeRefresh()
         setupBackNavigation()
         setupRetryButton()
         setupNetworkMonitor()
@@ -178,21 +172,6 @@ class MainActivity : AppCompatActivity() {
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
     }
 
-    private fun setupSwipeRefresh() {
-        swipeRefresh = binding.swipeRefresh
-        swipeRefresh.setColorSchemeResources(
-            com.google.android.material.R.color.design_default_color_primary
-        )
-        swipeRefresh.setOnRefreshListener {
-            if (isNetworkAvailable()) {
-                webView.reload()
-            } else {
-                swipeRefresh.isRefreshing = false
-                showNoInternetView()
-            }
-        }
-    }
-
     private fun setupBackNavigation() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -206,11 +185,19 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun loadOrReload() {
+        if (webView.url.isNullOrBlank()) {
+            webView.loadUrl(DEVIN_URL)
+        } else {
+            webView.reload()
+        }
+    }
+
     private fun setupRetryButton() {
         binding.btnRetry.setOnClickListener {
             if (isNetworkAvailable()) {
                 hideNoInternetView()
-                webView.reload()
+                loadOrReload()
             } else {
                 Toast.makeText(this, R.string.still_offline, Toast.LENGTH_SHORT).show()
             }
@@ -226,7 +213,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (binding.noInternetView.visibility == View.VISIBLE) {
                         hideNoInternetView()
-                        webView.reload()
+                        loadOrReload()
                     }
                 }
             }
@@ -259,7 +246,6 @@ class MainActivity : AppCompatActivity() {
     private fun showNoInternetView() {
         binding.noInternetView.visibility = View.VISIBLE
         binding.webViewContainer.visibility = View.GONE
-        binding.progressBar.visibility = View.GONE
     }
 
     private fun hideNoInternetView() {
@@ -338,7 +324,6 @@ class MainActivity : AppCompatActivity() {
         binding.fullscreenContainer.addView(view)
         binding.fullscreenContainer.visibility = View.VISIBLE
         binding.webViewContainer.visibility = View.GONE
-        binding.swipeRefresh.isEnabled = false
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -348,7 +333,6 @@ class MainActivity : AppCompatActivity() {
         binding.fullscreenContainer.removeAllViews()
         binding.fullscreenContainer.visibility = View.GONE
         binding.webViewContainer.visibility = View.VISIBLE
-        binding.swipeRefresh.isEnabled = true
         customViewCallback?.onCustomViewHidden()
         customView = null
         customViewCallback = null
@@ -396,22 +380,16 @@ class MainActivity : AppCompatActivity() {
         ): Boolean {
             val url = request.url.toString()
 
-            // Allow authentication-related URLs to load in WebView
+            if (isAllowedUrl(url)) return false
             if (isAuthUrl(url)) return false
 
-            return if (isAllowedUrl(url)) {
-                false
-            } else {
-                openExternalBrowser(url)
-                true
-            }
+            openExternalBrowser(url)
+            return true
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
             isPageLoaded = true
-            swipeRefresh.isRefreshing = false
-            binding.progressBar.visibility = View.GONE
             CookieManager.getInstance().flush()
         }
 
@@ -437,26 +415,14 @@ class MainActivity : AppCompatActivity() {
             val host = Uri.parse(url).host?.lowercase() ?: return false
             return host.contains("accounts.google.com") ||
                     host.contains("login.microsoftonline.com") ||
-                    host.contains("github.com") ||
                     host.contains("auth0.com") ||
-                    host.contains("cognition") ||
-                    host.endsWith(".devin.ai") ||
-                    host == "devin.ai"
+                    host.contains("cognition")
         }
     }
 
     // ── Custom WebChromeClient ────────────────────────────────────────────
 
     private inner class DevinWebChromeClient : WebChromeClient() {
-
-        override fun onProgressChanged(view: WebView, newProgress: Int) {
-            if (newProgress < 100) {
-                binding.progressBar.visibility = View.VISIBLE
-                binding.progressBar.progress = newProgress
-            } else {
-                binding.progressBar.visibility = View.GONE
-            }
-        }
 
         override fun onShowFileChooser(
             webView: WebView,
@@ -548,11 +514,8 @@ class MainActivity : AppCompatActivity() {
                         val host = Uri.parse(url).host?.lowercase() ?: return false
                         return host.contains("accounts.google.com") ||
                                 host.contains("login.microsoftonline.com") ||
-                                host.contains("github.com") ||
                                 host.contains("auth0.com") ||
-                                host.contains("cognition") ||
-                                host.endsWith(".devin.ai") ||
-                                host == "devin.ai"
+                                host.contains("cognition")
                     }
 
                     override fun onPageFinished(view: WebView, url: String?) {
