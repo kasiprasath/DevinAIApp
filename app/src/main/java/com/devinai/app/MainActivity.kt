@@ -246,7 +246,6 @@ class MainActivity : AppCompatActivity() {
     private fun showNoInternetView() {
         binding.noInternetView.visibility = View.VISIBLE
         binding.webViewContainer.visibility = View.GONE
-        binding.progressBar.visibility = View.GONE
     }
 
     private fun hideNoInternetView() {
@@ -381,9 +380,6 @@ class MainActivity : AppCompatActivity() {
         ): Boolean {
             val url = request.url.toString()
 
-            // Allow authentication-related URLs to load in WebView
-            if (isAuthUrl(url)) return false
-
             return if (isAllowedUrl(url)) {
                 false
             } else {
@@ -395,7 +391,6 @@ class MainActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
             isPageLoaded = true
-            binding.progressBar.visibility = View.GONE
             CookieManager.getInstance().flush()
         }
 
@@ -417,30 +412,11 @@ class MainActivity : AppCompatActivity() {
             handler.cancel()
         }
 
-        private fun isAuthUrl(url: String): Boolean {
-            val host = Uri.parse(url).host?.lowercase() ?: return false
-            return host.contains("accounts.google.com") ||
-                    host.contains("login.microsoftonline.com") ||
-                    host.contains("github.com") ||
-                    host.contains("auth0.com") ||
-                    host.contains("cognition") ||
-                    host.endsWith(".devin.ai") ||
-                    host == "devin.ai"
-        }
     }
 
     // ── Custom WebChromeClient ────────────────────────────────────────────
 
     private inner class DevinWebChromeClient : WebChromeClient() {
-
-        override fun onProgressChanged(view: WebView, newProgress: Int) {
-            if (newProgress < 100) {
-                binding.progressBar.visibility = View.VISIBLE
-                binding.progressBar.progress = newProgress
-            } else {
-                binding.progressBar.visibility = View.GONE
-            }
-        }
 
         override fun onShowFileChooser(
             webView: WebView,
@@ -522,21 +498,9 @@ class MainActivity : AppCompatActivity() {
                             this@MainActivity.webView.loadUrl(url)
                             return true
                         }
-                        if (isAuthUrl(url)) return false
                         openExternalBrowser(url)
                         destroyChildWebView()
                         return true
-                    }
-
-                    private fun isAuthUrl(url: String): Boolean {
-                        val host = Uri.parse(url).host?.lowercase() ?: return false
-                        return host.contains("accounts.google.com") ||
-                                host.contains("login.microsoftonline.com") ||
-                                host.contains("github.com") ||
-                                host.contains("auth0.com") ||
-                                host.contains("cognition") ||
-                                host.endsWith(".devin.ai") ||
-                                host == "devin.ai"
                     }
 
                     override fun onPageFinished(view: WebView, url: String?) {
