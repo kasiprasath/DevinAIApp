@@ -14,6 +14,39 @@
         <item name="android:windowLightStatusBar">true</item>
     </style>
 
+    <style name="ExitDialogTheme" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="materialAlertDialogTitleTextStyle">@style/ExitDialogTitle</item>
+        <item name="materialAlertDialogBodyTextStyle">@style/ExitDialogBody</item>
+        <item name="buttonBarPositiveButtonStyle">@style/ExitDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/ExitDialogButton</item>
+        <item name="alertDialogStyle">@style/ExitAlertDialog</item>
+    </style>
+
+    <style name="ExitAlertDialog" parent="MaterialAlertDialog.Material3">
+        <item name="shapeAppearance">@style/ExitDialogShape</item>
+    </style>
+
+    <style name="ExitDialogShape" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerSize">16dp</item>
+    </style>
+
+    <style name="ExitDialogTitle" parent="MaterialAlertDialog.Material3.Title.Text">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="ExitDialogBody" parent="MaterialAlertDialog.Material3.Body.Text">
+        <item name="android:textColor">#E0E0E0</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="ExitDialogButton" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
     <style name="Theme.DevinAIApp.Splash" parent="Theme.DevinAIApp">
         <item name="windowSplashScreenBackground">@color/splash_background_light</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
