@@ -32,9 +32,11 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import kotlin.math.abs
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -88,6 +90,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         setupRetryButton()
         setupNetworkMonitor()
+        setupSidebarSwipeGesture()
 
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onResume(owner: LifecycleOwner) {
@@ -214,52 +217,64 @@ class MainActivity : AppCompatActivity() {
         webView.evaluateJavascript(js, null)
     }
 
-    private fun injectSwipeToCloseSidebar() {
-        val js = """
-            (function() {
-                if (window.__devinSwipeInstalled) return;
-                window.__devinSwipeInstalled = true;
-                var startX = 0, startY = 0, startTime = 0;
-                document.addEventListener('touchstart', function(e) {
-                    startX = e.touches[0].clientX;
-                    startY = e.touches[0].clientY;
-                    startTime = Date.now();
-                }, { passive: true });
-                document.addEventListener('touchend', function(e) {
-                    var endX = e.changedTouches[0].clientX;
-                    var endY = e.changedTouches[0].clientY;
-                    var dx = endX - startX;
-                    var dy = Math.abs(endY - startY);
-                    var elapsed = Date.now() - startTime;
-                    if (dx < -60 && dy < 120 && elapsed < 500) {
-                        var closed = false;
-                        // Strategy 1: Find sidebar/aside and look for toggle/close buttons
-                        var selectors = ['aside', '[role="navigation"]', 'nav[class*="sidebar"]', 'nav[class*="Sidebar"]',
-                            '[class*="sidebar"]', '[class*="Sidebar"]', '[class*="side-panel"]', '[class*="SidePanel"]',
-                            '[class*="drawer"]', '[class*="Drawer"]', '[class*="side_panel"]', '[class*="sidenav"]'];
-                        for (var i = 0; i < selectors.length && !closed; i++) {
-                            var el = document.querySelector(selectors[i]);
-                            if (el && el.offsetWidth > 50) {
-                                var btns = el.querySelectorAll('button');
-                                for (var j = 0; j < btns.length; j++) {
-                                    var b = btns[j];
-                                    var label = (b.getAttribute('aria-label') || '') + (b.textContent || '') + (b.className || '');
-                                    if (/close|collapse|toggle|hide|menu/i.test(label)) {
-                                        b.click(); closed = true; break;
-                                    }
-                                }
-                                if (!closed) {
-                                    var firstBtn = el.querySelector('button');
-                                    if (firstBtn) { firstBtn.click(); closed = true; }
-                                }
-                            }
-                        }
-                        // Strategy 2: Dispatch Escape key
-                        if (!closed) {
-                            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+    private var swipeStartX = 0f
+    private var swipeStartY = 0f
+    private var isSwipingToCloseSidebar = false
+    private val swipeThreshold = 80f
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupSidebarSwipeGesture() {
+        webView.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    swipeStartX = event.x
+                    swipeStartY = event.y
+                    isSwipingToCloseSidebar = false
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!isSwipingToCloseSidebar) {
+                        val dx = event.x - swipeStartX
+                        val dy = abs(event.y - swipeStartY)
+                        if (dx < -swipeThreshold && dy < swipeThreshold * 1.5f && abs(dx) > dy) {
+                            isSwipingToCloseSidebar = true
+                            val cancelEvent = MotionEvent.obtain(event)
+                            cancelEvent.action = MotionEvent.ACTION_CANCEL
+                            view.onTouchEvent(cancelEvent)
+                            cancelEvent.recycle()
                         }
                     }
-                }, { passive: true });
+                    isSwipingToCloseSidebar
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (isSwipingToCloseSidebar) {
+                        closeSidebarViaJs()
+                        isSwipingToCloseSidebar = false
+                        true
+                    } else {
+                        false
+                    }
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun closeSidebarViaJs() {
+        val js = """
+            (function() {
+                // Strategy 1: Click on backdrop/overlay area (right side of viewport)
+                var x = window.innerWidth * 0.9;
+                var y = window.innerHeight * 0.5;
+                var el = document.elementFromPoint(x, y);
+                if (el) {
+                    el.dispatchEvent(new MouseEvent('mousedown', {clientX: x, clientY: y, bubbles: true}));
+                    el.dispatchEvent(new MouseEvent('mouseup', {clientX: x, clientY: y, bubbles: true}));
+                    el.dispatchEvent(new MouseEvent('click', {clientX: x, clientY: y, bubbles: true}));
+                }
+                // Strategy 2: Dispatch Escape key
+                document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true}));
+                document.dispatchEvent(new KeyboardEvent('keyup', {key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true}));
             })();
         """.trimIndent()
         webView.evaluateJavascript(js, null)
@@ -506,7 +521,6 @@ class MainActivity : AppCompatActivity() {
             isPageLoaded = true
             CookieManager.getInstance().flush()
             injectInputFixes()
-            injectSwipeToCloseSidebar()
         }
 
         override fun onReceivedError(
