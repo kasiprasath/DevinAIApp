@@ -230,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         webView.evaluateJavascript(js, null)
     }
 
+
     private var swipeStartX = 0f
     private var swipeStartY = 0f
     private var isSwipingToCloseSidebar = false
