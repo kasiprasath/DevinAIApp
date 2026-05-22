@@ -230,6 +230,32 @@ class MainActivity : AppCompatActivity() {
         webView.evaluateJavascript(js, null)
     }
 
+    private fun injectZIndexFixes() {
+        val js = """
+            (function() {
+                if (window.__devinZIndexFixed) return;
+                window.__devinZIndexFixed = true;
+                var style = document.createElement('style');
+                style.textContent = `
+                    [class*="settings" i], [class*="Settings"],
+                    a[href*="settings" i], button[class*="settings" i],
+                    nav > :last-child, aside > :last-child {
+                        position: relative !important;
+                        z-index: 9999 !important;
+                    }
+                    body, #root, #__next, main, [class*="container" i], [class*="layout" i] {
+                        padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+                    }
+                    nav, aside, [class*="sidebar" i], [class*="Sidebar"], [role="navigation"] {
+                        padding-bottom: env(safe-area-inset-bottom, 16px) !important;
+                    }
+                `;
+                document.head.appendChild(style);
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
     private var swipeStartX = 0f
     private var swipeStartY = 0f
     private var isSwipingToCloseSidebar = false
@@ -534,6 +560,7 @@ class MainActivity : AppCompatActivity() {
             isPageLoaded = true
             CookieManager.getInstance().flush()
             injectInputFixes()
+            injectZIndexFixes()
         }
 
         override fun onReceivedError(
